@@ -1,0 +1,56 @@
+{
+  "name": "@webauthz/sdk-app-core-node-js",
+  "version": "1.0.1",
+  "description": "SDK for applications to obtain access to a resource via Webauthz",
+  "main": "dist/main.umd.js",
+  "module": "src/main",
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "clean": "exit 0",
+    "build": "rollup src/main.js --file dist/main.umd.js --format umd --name Webauthz",
+    "lint": "eslint --fix src/**",
+    "deps": "exit 0",
+    "pkg": "exit 0",
+    "start": "exit 0",
+    "test": "exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webauthz/sdk-app-core-node-js.git"
+  },
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "keywords": [
+    "cryptium",
+    "loginshield",
+    "enterprise",
+    "sdk"
+  ],
+  "author": "Cryptium (https://cryptium.com)",
+  "contributors": [
+    "Jonathan Buhacoff <jonathan@cryptium.com> (https://github.com/jbuhacoff)"
+  ],
+  "bugs": {
+    "url": "https://github.com/webauthz/sdk-app-core-node-js/issues"
+  },
+  "homepage": "https://github.com/webauthz/sdk-app-core-node-js#readme",
+  "license": "BSD-2-Clause",
+  "dependencies": {
+    "@cryptium/random-node-js": "^0.3.0",
+    "axios": "^0.21.1"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^11.0.0",
+    "@libertyio/commitlint-config": "^1.0.0",
+    "@libertyio/commitlint-config-type-enum": "^1.0.0",
+    "eslint": "^6.8.0",
+    "eslint-config-airbnb-base": "^14.2.0",
+    "eslint-plugin-import": "^2.22.0",
+    "husky": "^4.3.0",
+    "rollup": "^1.32.1"
+  }
+}
