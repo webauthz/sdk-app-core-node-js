@@ -1,5 +1,5 @@
-sdk-app-node-js
-===============
+sdk-app-core-node-js
+====================
 
 Webauthz SDK for a NodeJS web application.
 
