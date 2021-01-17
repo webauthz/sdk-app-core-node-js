@@ -26,8 +26,7 @@
   },
   "keywords": [
     "cryptium",
-    "loginshield",
-    "enterprise",
+    "webauthz",
     "sdk"
   ],
   "author": "Cryptium (https://cryptium.com)",
@@ -47,10 +46,10 @@
     "@commitlint/cli": "^11.0.0",
     "@libertyio/commitlint-config": "^1.0.0",
     "@libertyio/commitlint-config-type-enum": "^1.0.0",
-    "eslint": "^6.8.0",
-    "eslint-config-airbnb-base": "^14.2.0",
-    "eslint-plugin-import": "^2.22.0",
-    "husky": "^4.3.0",
-    "rollup": "^1.32.1"
+    "eslint": "^7.18.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.22.1",
+    "husky": "^4.3.8",
+    "rollup": "^2.36.2"
   }
 }
