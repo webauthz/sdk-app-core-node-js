@@ -10,13 +10,15 @@ log - optional log instance (must have `trace`, `info`, `warn`, `error` function
 database - object that implements the Webauthz Data interface
 client_name - string containing application name, for example 'Webauthz Test Application'
 grant_redirect_uri - string containing the grant redirect URI, for example `${ENDPOINT_URL}/webauthz/grant`
+register_extra - extra attributes to include in webauthz registration
 */
 class Webauthz {
-    constructor({ log = console, database, client_name, grant_redirect_uri } = {}) {
+    constructor({ log = console, database, client_name, grant_redirect_uri, register_extra = {} } = {}) {
         this.log = log;
         this.database = database;
         this.client_name = client_name;
         this.grant_redirect_uri = grant_redirect_uri;
+        this.register_extra = register_extra;
     }
 
     /**
@@ -120,6 +122,7 @@ class Webauthz {
     async registerWithURI(webauthz_register_uri) {
         // we have not yet registered with the webauthz server, so do that now
         const registrationRequest = {
+            ...this.register_extra,
             client_name: this.client_name,
             grant_redirect_uri: this.grant_redirect_uri,
         };
@@ -199,26 +202,7 @@ class Webauthz {
     }
 
     async createAccessRequest({ resource_uri, realm, scope, webauthz_discovery_uri, path, user_id }, context) {
-
-        const configuration = await this.getConfiguration(webauthz_discovery_uri);
-        const { webauthz_register_uri, webauthz_request_uri } = configuration;
-        const registration = await this.getRegistration(webauthz_register_uri);
-
-        // we are registered with webauthz server, so prepare the redirect uri
-
         const requestId = randomBase64url(16); // the client_state for webauthz protocol
-
-        // parse `webauthz_request_uri` to add our own query parameters (it might already have some)
-        const parsedWebauthzRequestURI = new URL(webauthz_request_uri);
-        const webauthzRequestParams = new URLSearchParams(parsedWebauthzRequestURI.search);
-        webauthzRequestParams.append('client_id', registration.client_id);
-        webauthzRequestParams.append('client_state', requestId);
-        webauthzRequestParams.append('realm', realm);
-        webauthzRequestParams.append('scope', scope);
-        webauthzRequestParams.append('path', path);
-        parsedWebauthzRequestURI.search = webauthzRequestParams.toString();
-        const access_request_uri = parsedWebauthzRequestURI.toString();
-    
         const requestRecord = {
             resource_uri,
             realm,
@@ -227,18 +211,58 @@ class Webauthz {
             path,
             user_id, // so only the specified user can manage the request
             context, // application-specific, for example { method, body, ... }, whatever is needed to repeat the same request after access is approved
-            access_request_uri, // the redirect location
             status: 'redirect',
         };
 
         const isCreated = await this.database.createAccessRequest(requestId, requestRecord);
-        if (isCreated) {
-            return {
-                client_state: requestId,
-                ...requestRecord,
-            };
+        if (!isCreated) {
+            throw new Error('failed to create access request');
         }
-        throw new Error('failed to create access request');
+
+        // we are registered with webauthz server, so prepare the redirect uri
+        const redirect = await this.startAccessRequest(webauthz_discovery_uri, {
+            client_state: requestId,
+            realm,
+            scope,
+        });
+    
+        return {
+            client_state: requestId,
+            ...requestRecord,
+            access_request_uri: redirect,
+        };
+    }
+
+    async startAccessRequest(webauthz_discovery_uri, request) {
+        const configuration = await this.getConfiguration(webauthz_discovery_uri);
+        const { webauthz_register_uri, webauthz_request_uri } = configuration;
+        const registration = await this.getRegistration(webauthz_register_uri);
+
+        const { client_token } = registration;
+        try {
+            const response = await axios.post(webauthz_request_uri, JSON.stringify(request), {
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${client_token}`,
+                },
+            });
+            const { redirect } = response.data;
+            if (typeof redirect !== 'string' || redirect.length === 0) {
+                this.log.error('startAccessRequest: no redirect in response');
+                throw new Error('failed to start access request');
+            }
+
+            return redirect;
+        } catch (err) {
+            if (err.response) {
+                this.log.error(`startAccessRequest: access request failed: ${err.response.status} ${err.response.statusText}`);
+                this.log.error('startAccessRequest: no redirect in response');
+            } else {
+                this.log.error('startAccessRequest failed', err);
+            }
+            throw new Error('failed to start access request');
+        }        
     }
 
     async getAccessRequest(webauthzRequestId, user_id) {
@@ -247,12 +271,12 @@ class Webauthz {
             throw new Error('not found');
         }
 
-        const { resource_uri, status, realm, scope, webauthz_discovery_uri, path, user_id: stored_user_id, access_request_uri, context } = requestRecord;
+        const { resource_uri, status, realm, scope, webauthz_discovery_uri, path, user_id: stored_user_id, context } = requestRecord;
         if (stored_user_id && user_id !== stored_user_id) {
             throw new Error('access denied');
         }
 
-        return { resource_uri, status, realm, scope, webauthz_discovery_uri, path, user_id, access_request_uri, context };
+        return { resource_uri, status, realm, scope, webauthz_discovery_uri, path, user_id, context };
         /*
         if (status === 'granted') {
             return { resource_uri, status };
@@ -269,6 +293,21 @@ class Webauthz {
         */
     }
 
+    async deleteAccessRequest(webauthzRequestId, user_id) {
+        const requestRecord = await this.database.fetchAccessRequest(webauthzRequestId);
+        if (typeof requestRecord !== 'object' || requestRecord === null) {
+            throw new Error('not found');
+        }
+
+        const { user_id: stored_user_id } = requestRecord;
+        if (stored_user_id && user_id !== stored_user_id) {
+            throw new Error('access denied');
+        }
+
+        const isDeleted = await this.database.deleteAccessRequest(webauthzRequestId);
+        return isDeleted;
+    }    
+
     async exchange({ client_id, client_state, grant_token, refresh = false, user_id }) {
         // lookup the request
         const webauthzRequest = await this.database.fetchAccessRequest(client_state);
@@ -277,7 +316,7 @@ class Webauthz {
             throw new Error('not found');
         }
 
-        const { resource_uri, realm, scope, webauthz_discovery_uri, path, access_request_uri, user_id: stored_user_id, refresh_token, refresh_token_not_after } = webauthzRequest;
+        const { resource_uri, realm, scope, webauthz_discovery_uri, path, user_id: stored_user_id, refresh_token, refresh_token_not_after } = webauthzRequest;
         if (stored_user_id && user_id !== stored_user_id) {
             throw new Error('access denied');
         }
@@ -298,7 +337,6 @@ class Webauthz {
             // after access request is granted, exchange the grant token for an access token
             exchangeRequest = {
                 grant_token,
-                access_request_uri,
             };
         } else if (refresh && refresh_token) {
             // use refresh token to request a new access token
@@ -308,7 +346,6 @@ class Webauthz {
             }
             exchangeRequest = {
                 refresh_token,
-                access_request_uri,
             };
         } else {
             this.log.error('exchange: input grant_token or stored refresh_token is required');
